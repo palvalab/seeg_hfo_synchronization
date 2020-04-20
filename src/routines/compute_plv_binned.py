@@ -24,10 +24,10 @@ import tqdm
 
 from crosspy.preprocessing.seeg.seeg_utils import create_reference_mask, get_electrode_distance
 from crosspy.preprocessing.signal import preprocess_data_morlet
-
-from ripples_utils import make_bipolar, get_ez_samples_mask
-
 from crosspy.core.phase import find_event_indexes
+
+from ..utils.ripples_utils import make_bipolar, get_ez_samples_mask, digitize_cupy
+
 
 np.random.seed(42)
 cp.random.seed(42)
@@ -56,41 +56,6 @@ def cupy_median(x, axis=-1):
     else: 
         m_even = xp.take(s, n // 2 - 1, axis)
         return (m_odd + m_even) / 2
-
-
-_digitize_kernel = cp.core.ElementwiseKernel(
-    'S x, raw T bins, int32 n_bins',
-    'raw U y',
-    '''
-    int low = 0;
-    if (x < bins[0]) {
-        low = 0;
-    } else if (bins[n_bins - 1] < x) {
-        low = n_bins;
-    } else {
-        int high = n_bins - 1;
-
-        while (high - low > 1) {
-            int mid = (high + low) / 2;
-            if (bins[mid] <= x) {
-                low = mid;
-            } else {
-                high = mid;
-            }
-        }
-        low += 1;
-    }
-    y[i] = low;
-    ''')
-
-
-def digitize_cupy(x, bins, out=None):
-    if out is None:
-        out = cp.zeros_like(x, dtype=cp.uint8)
-
-    _digitize_kernel(x, bins, bins.size, out)
-    
-    return out
 
 
 class PLVProcessor(object):
@@ -158,9 +123,6 @@ class PLVProcessor(object):
             self.data_thresholded[i] = data_envelope[i] <= (cupy_median(data_envelope[i])*2)
             # self.data_thresholded[i] = True
         
-        # for i in range(n_chans):
-        #     amplitude_bins = cp.percentile(data_envelope[i][self.data_thresholded[i]], amplitude_percentiles)
-        #     digitize_cupy(data_envelope[i], amplitude_bins, out=self.data_amplitude_labels[i])
 
         amplitude_bins = cp.percentile(data_envelope[self.data_thresholded], amplitude_percentiles)
         digitize_cupy(data_envelope, amplitude_bins, out=self.data_amplitude_labels)
@@ -271,8 +233,6 @@ def main(args):
         bad_samples[:args.bad_samples] = True
 
         good_samples = np.logical_not(bad_samples)
-
-        print('Good samples: {:.2f}', good_samples.mean(), bipo._data.shape)
 
         processor = PLVProcessor(frequencies, analysis_params['number_of_bins'], int(bipo.info['sfreq']), analysis_params['omega'])
         processor.process_data(bipo._data[:, good_samples], ref_mask)

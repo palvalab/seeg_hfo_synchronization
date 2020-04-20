@@ -31,6 +31,9 @@ import json
 
 import argparse
 
+from ..utils.ripples_utils import get_ez_samples_mask, make_bipolar
+
+
 def create_surrogate(data):
     res = cp.zeros_like(data)
     for i in range(data.shape[0]):
@@ -39,45 +42,11 @@ def create_surrogate(data):
     
     return res
 
+
 def create_surrogate_inplace(data):
     for i in range(data.shape[0]):
         idx = np.random.randint(data.shape[1]-1)
         data[i] = cp.roll(data[i], idx)
-
-
-def make_bipolar(data_fname, montage_filename, lowpass_frequency):
-    raw = mne.io.read_raw_edf(data_fname, preload=False, verbose=False)
-    mne.rename_channels(raw.info, lambda name: re.sub(r'(POL|SEEG)\s+', '', name).strip())
-
-    channel_types = dict()
-
-    for ch in raw.ch_names:
-        result = re.match(r'^[A-Z][\']?\d+', ch)
-        if result:
-            channel_types[ch] = 'seeg'
-
-    raw.set_channel_types(channel_types)
-
-    montage = pd.read_csv(montage_filename, delimiter='\t')
-    montage.drop_duplicates(subset='name', inplace=True)
-
-    anode,cathode = clean_montage(raw.ch_names, montage.anode.tolist(), montage.cathode.tolist())
-
-    raw.load_data()
-
-    bipo = mne.set_bipolar_reference(raw, list(anode), list(cathode), copy=True, verbose=False)
-    bipo = drop_monopolar_channels(bipo)
-    bipo.drop_channels(bipo.info['bads'])
-
-    picks_seeg = mne.pick_types(bipo.info, meg=False, seeg=True)
-
-    non_seeg_chans = [ch_name for ch_idx, ch_name in enumerate(bipo.ch_names) if not(ch_idx in picks_seeg) or len(ch_name.split('-')) == 1]
-    bipo.drop_channels(non_seeg_chans)
-
-    bipo.notch_filter(np.arange(50, bipo.info['sfreq']//2, 50), n_jobs=32)
-    bipo.filter(None, lowpass_frequency, verbose=False, n_jobs=32)
-
-    return bipo
 
 
 def get_ez_mask(data_ref, ez_set):
@@ -96,15 +65,6 @@ def filter_morlet_gpu(data, sr, omega, morlet_frequency):
         data_preprocessed[i] = cusignal.fftconvolve(data_gpu[i], win, 'same')
     
     return data_preprocessed
-
-
-def get_ez_samples_mask(windows_data, data):
-    mask = np.full(data.shape[1], fill_value=True)
-    
-    for start, end in windows_data[['Start', 'End']].values:
-        mask[start:end] = False
-    
-    return mask
 
 
 def main(args):   
@@ -128,8 +88,6 @@ def main(args):
             print('Subject {} is processed!'.format(subject.entities['subject']))
             continue
 
-        print('Working with subject {}'.format(subject.entities['subject']))
-
         montage_filename = os.path.join(subject.dirname,  'sub-{}_montage.tcsv'.format(subject.entities['subject']))
         data_filename = subject.path
 
@@ -152,11 +110,7 @@ def main(args):
         phase_amplitude_correlation = np.full(shape=(len(high_freqs), len(low_freqs), n_chans, n_chans), fill_value=np.nan)    
         phase_amplitude_surrogates = np.full(shape=(len(high_freqs), len(low_freqs), n_chans, n_chans), fill_value=np.nan) 
 
-        print('Subject {} has {:.2f} a total of {} of ez samples!'.format(subject.entities['subject'], 1 - subject_ez_samples_mask.mean(), subject_ez_samples_mask.shape[0] - subject_ez_samples_mask.sum()))
-
         data_gpu = cp.array(bipo._data[:, subject_ez_samples_mask])   
-
-        print('Subject {} has {} data shape'.format(subject.entities['subject'], data_gpu.shape))
 
         for low_f in tqdm.tqdm(low_freqs, desc='Preprocessing...', leave=False):
             low_fname = 'temp/sub_{}_freq_{:.2f}.npy'.format(subject.entities['subject'], low_f)
@@ -174,9 +128,6 @@ def main(args):
         sr = bipo.info['sfreq']
         bar = tqdm.tqdm(total=225, leave=False)
         for high_idx, high_f in enumerate(high_freqs):
-            
-            # data_high_freq = filter_morlet_gpu(data_gpu, sr, analysis_params['omega'], high_f)
-            # high_amp = cp.abs(data_high_freq)
             high_amp = cp.abs(filter_morlet_gpu(data_gpu, sr, analysis_params['omega'], high_f))
 
             for low_idx, low_f in enumerate(low_freqs):

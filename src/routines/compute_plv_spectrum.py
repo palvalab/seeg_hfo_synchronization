@@ -28,6 +28,7 @@ from crosspy.preprocessing.seeg.support import clean_montage, drop_monopolar_cha
 from crosspy.preprocessing.seeg.seeg_utils import create_reference_mask, get_electrode_distance
 from crosspy.preprocessing.signal import preprocess_data_morlet
 
+from ..utils.ripples_utils import get_ez_samples_mask, make_bipolar
 
 np.random.seed(42)
 cp.random.seed(42)
@@ -50,61 +51,6 @@ def create_bipolar_ref_mask(ch_names):
     return mask
 
 
-def get_bipolar_contacts(channel_names):
-    anode = list()
-    cathode = list()
-    dropList = list()
-    for name in channel_names:
-        if re.match(r'^[A-Z][\']?[0-9]+$',name):
-            splitLabel = re.split(r'([0-9]+)',name)
-            if splitLabel:
-                cathodeName = splitLabel[0]+str(int(splitLabel[1])+1)
-                if cathodeName in channel_names:
-                    anode.append(name)
-                    cathode.append(cathodeName) 
-        else:
-            dropList.append(name)
-    return (anode, cathode)
-
-def make_bipolar(data_fname, montage_filename, lowpass_frequency, pure_bipolar=False):
-    raw = mne.io.read_raw_edf(data_fname, preload=False, verbose=False)
-    mne.rename_channels(raw.info, lambda name: re.sub(r'(POL|SEEG)\s+', '', name).strip())
-
-    channel_types = dict()
-
-    for ch in raw.ch_names:
-        result = re.match(r'^[A-Z][\']?\d+', ch)
-        if result:
-            channel_types[ch] = 'seeg'
-
-    raw.set_channel_types(channel_types)
-
-    if pure_bipolar:
-        print('Print bipolar!')
-        anode, cathode = get_bipolar_contacts(raw.ch_names)
-    else:
-        montage = pd.read_csv(montage_filename, delimiter='\t')
-        montage.drop_duplicates(subset='name', inplace=True)
-
-        anode,cathode = clean_montage(raw.ch_names, montage.anode.tolist(), montage.cathode.tolist())
-
-    raw.load_data()
-
-    bipo = mne.set_bipolar_reference(raw, list(anode), list(cathode), copy=True, verbose=False)
-    bipo = drop_monopolar_channels(bipo)
-    bipo.drop_channels(bipo.info['bads'])
-
-    picks_seeg = mne.pick_types(bipo.info, meg=False, seeg=True)
-
-    non_seeg_chans = [ch_name for ch_idx, ch_name in enumerate(bipo.ch_names) if not(ch_idx in picks_seeg) or len(ch_name.split('-')) == 1]
-    bipo.drop_channels(non_seeg_chans)
-
-    bipo.notch_filter(np.arange(50, bipo.info['sfreq']//2, 50), n_jobs=32)
-    bipo.filter(None, lowpass_frequency, verbose=False, n_jobs=32)
-
-    return bipo
-
-
 def get_frequencies():
     return np.array(
         [2.        ,   2.26576777,   2.5668518 ,   2.90794503,
@@ -120,6 +66,7 @@ def get_frequencies():
             270.        , 290.        , 310.        , 330.        ,
             350.        , 370.        , 390.        , 410.        ,
             430.        , 450.        ])
+
 
 def is_processed(res_path):
     return os.path.exists(res_path)
@@ -159,25 +106,6 @@ def routine_cpu(data, sr, omega, morlet_frequency):
     plv_surr = np.inner(surr_data, np.conj(surr_data)) / n_ts
     
     return plv, plv_surr
-
-
-def compute_psd_scaled(bipo):
-    psds, freqs = mne.time_frequency.psd_welch(bipo, n_fft=2048)
-    psds *= 1e3 * 1e3
-
-    np.log10(np.maximum(psds, np.finfo(float).tiny), out=psds)
-    psds *= 10
-    
-    return freqs, psds
-
-
-def get_ez_samples_mask(windows_data, data):
-    mask = np.full(data.shape[1], fill_value=True)
-    
-    for start, end in windows_data[['Start', 'End']].values:
-        mask[start:end] = False
-    
-    return mask
 
 
 def main(args):   
@@ -244,7 +172,7 @@ def main(args):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Compute PLV spectrum for a BIDS dataset')
     parser.add_argument('--config_file', required=True, help='Name of the configuration file')
-    parser.add_argument('--cuda', default=0, type=int, help='Name of the configuration file')
+    parser.add_argument('--cuda', default=0, type=int, help='ID of cuda device')
 
     args = parser.parse_args()
 

@@ -3,6 +3,7 @@ import re
 import glob
 import pickle
 import itertools
+import json
 
 import numpy as np
 
@@ -14,8 +15,9 @@ from joblib import Parallel, delayed
 
 from crosspy.preprocessing.seeg.seeg_utils import create_reference_mask
 
-np.random.seed(42)
+from ..utils.ripples_utils import is_monopolar, baseline_zscore, create_task_masks
 
+np.random.seed(42)
 
 def _joblib_wrapper_with_amplitude_surr(data_angle, data_amplitude, window_len, i, j, n_shuffles=100):
     n_windows = data_angle.shape[~0] // window_len
@@ -34,37 +36,6 @@ def _joblib_wrapper_with_amplitude_surr(data_angle, data_amplitude, window_len, 
         surr_cplv[k] = np.array([np.mean(surr_diff[:, idx*window_len:(idx+1)*window_len]) for idx in range(n_windows)])
         
     return cplv_trials, relevance_trials, surr_cplv.mean(axis=0)
-
-
-def baseline_zscore(arr, baseline):
-    m = arr[...,:baseline].mean(axis=-1, keepdims=True)
-    s = arr[...,:baseline].std(axis=-1, keepdims=True)
-    
-    return (arr - m)/s
-
-
-def is_monopolar(chan):
-    tokens = chan.split('-')
-    return len(tokens) == 1 or len(tokens[1]) == 0
-
-
-def create_task_masks(x_indices, n_chans, y_indices=None):
-    if y_indices is None:
-        y_indices = x_indices.copy()
-
-    x_mask = np.zeros(n_chans, dtype=bool)
-    x_mask[x_indices] = True
-
-    y_mask = np.zeros(n_chans, dtype=bool)
-    y_mask[y_indices] = True
-        
-    task_mask = np.zeros((n_chans, n_chans), dtype=bool)
-    
-    for i,j in itertools.product(range(n_chans), range(n_chans)):
-        if x_mask[i] == True and y_mask[j] == True:
-            task_mask[i,j] = True
-    
-    return task_mask
 
 
 def main():
