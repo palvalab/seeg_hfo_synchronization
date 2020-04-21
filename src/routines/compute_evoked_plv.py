@@ -1,3 +1,6 @@
+import sys
+sys.path.append("..")
+
 import os
 import re
 import glob
@@ -15,7 +18,7 @@ from joblib import Parallel, delayed
 
 from crosspy.preprocessing.seeg.seeg_utils import create_reference_mask
 
-from ..utils.ripples_utils import is_monopolar, baseline_zscore, create_task_masks
+from utils.ripples_utils import baseline_zscore, create_task_masks, is_bipolar
 
 np.random.seed(42)
 
@@ -93,7 +96,7 @@ def main():
             continue
         
         epochs.drop(nogo_mask)
-        epochs.drop_channels([ch for ch in epochs.ch_names if is_monopolar(ch)])
+        epochs.drop_channels([ch for ch in epochs.ch_names if not(is_bipolar(ch))])
         epochs.apply_baseline((None,None))
         
         ref_mask = np.triu(create_reference_mask(epochs).astype(bool), 1)

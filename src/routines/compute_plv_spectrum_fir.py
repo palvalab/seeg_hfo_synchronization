@@ -2,21 +2,23 @@
 @author: Vladislav Myrov
 """
 
+import sys
+sys.path.append("..")
+
 import os
-
-import mne
-
 import re
 import json
 import pickle
 import glob
-
 import argparse
 import tqdm
 
 import numpy as np
 import pandas as pd
 import cupy as cp
+
+import mne
+
 
 from bids import BIDSLayout
 
@@ -25,7 +27,7 @@ from crosspy.preprocessing.seeg.support import clean_montage, drop_monopolar_cha
 from crosspy.preprocessing.seeg.seeg_utils import create_reference_mask, get_electrode_distance
 from crosspy.preprocessing.signal import preprocess_data_morlet
 
-from ..utils.ripples_utils import get_ez_samples_mask, make_bipolar, compute_psd_scaled
+from utils.ripples_utils import get_ez_samples_mask, make_bipolar, compute_psd_scaled
 
 np.random.seed(42)
 cp.random.seed(42)

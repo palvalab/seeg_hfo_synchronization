@@ -2,6 +2,9 @@
 @author: Vladislav Myrov
 """
 
+import sys
+sys.path.append("..")
+
 import argparse
 import glob
 import itertools
@@ -26,7 +29,7 @@ from crosspy.preprocessing.seeg.seeg_utils import create_reference_mask, get_ele
 from crosspy.preprocessing.signal import preprocess_data_morlet
 from crosspy.core.phase import find_event_indexes
 
-from ..utils.ripples_utils import make_bipolar, get_ez_samples_mask, digitize_cupy
+from utils.ripples_utils import make_bipolar, get_ez_samples_mask, digitize_cupy
 
 
 np.random.seed(42)

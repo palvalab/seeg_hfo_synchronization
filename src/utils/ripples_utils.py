@@ -80,6 +80,12 @@ def is_monopolar(chan):
     return len(tokens) == 1 or len(tokens[1]) == 0
 
 
+def is_bipolar(x):
+    tokens = x.split('-')
+    
+    return len(tokens) == 2 and len(tokens[1]) > 0
+
+
 def baseline_zscore(arr, baseline):
     m = arr[...,:baseline].mean(axis=-1, keepdims=True)
     s = arr[...,:baseline].std(axis=-1, keepdims=True)
